@@ -16,4 +16,9 @@ public class ExoNetworkedMonoBehavior : MonoBehaviour
     { 
         // Do Something...
     }
+
+    protected virtual GameObject NetworkInstantiate(GameObject toSpawn, Vector3 location, Quaternion rotation)
+    { 
+        
+    }
 }

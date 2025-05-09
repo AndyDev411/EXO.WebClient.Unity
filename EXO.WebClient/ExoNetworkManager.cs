@@ -151,6 +151,9 @@ namespace EXO.WebClient
         private Dictionary<int, MethodInfo> clientHandlers = new();
         private Dictionary<int, MethodInfo> hostHandlers = new();
 
+        private Dictionary<int, MethodInfo> exoSystemClientHandlers = new();
+        private Dictionary<int, MethodInfo> exoSystemHostHandlers = new();
+
         /// <summary>
         /// Clients that are connected to the server.
         /// </summary>
@@ -303,8 +306,11 @@ namespace EXO.WebClient
         /// </summary>
         private void InitHandlers()
         {
-            var clientMethods = GetStaticMethodsWithAttribute<ClientMessageHandlerAttribute>();
-            var hostMethods = GetStaticMethodsWithAttribute<HostMessageHandlerAttribute>();
+            var clientMethods = MethodRetrievalService.GetStaticMethodsWithAttribute<ClientMessageHandlerAttribute>();
+            var hostMethods = MethodRetrievalService.GetStaticMethodsWithAttribute<HostMessageHandlerAttribute>();
+
+            var exoSystemClientMethods = MethodRetrievalService.GetStaticMethodsWithAttribute<ExoSystemClientMessageHandlerAttribute>();
+            var exoSystemHostMethods = MethodRetrievalService.GetStaticMethodsWithAttribute<ExoSystemHostMessageHandlerAttribute>();
 
             foreach (var clientMeth in clientMethods)
             {
@@ -324,6 +330,26 @@ namespace EXO.WebClient
                 { continue; }
 
                 hostHandlers.Add(atrib.HandlerID, hostMeth);
+            }
+
+            foreach (var clientMeth in exoSystemClientMethods)
+            {
+                var atrib = clientMeth.GetCustomAttribute<ExoSystemClientMessageHandlerAttribute>();
+
+                if (atrib == null)
+                { continue; }
+
+                exoSystemClientHandlers.Add(atrib.handlerID, clientMeth);
+            }
+
+            foreach (var hostMeth in exoSystemHostMethods)
+            {
+                var atrib = hostMeth.GetCustomAttribute<ExoSystemHostMessageHandlerAttribute>();
+
+                if (atrib == null)
+                { continue; }
+
+                exoSystemHostHandlers.Add(atrib.handlerID, hostMeth);
             }
         }
 
@@ -448,13 +474,12 @@ namespace EXO.WebClient
             {
                 long from = packet.ReadLong();
                 // [Header][HandlerID][ClientID]
-                var handler = hostHandlers[handlerID];
+                var handler = exoSystemHostHandlers[handlerID];
                 handler.Invoke(null, new object[] { packet, from });
             }
             else
             {
-
-                clientHandlers[handlerID].Invoke(null, new object[] { packet });
+                exoSystemClientHandlers[handlerID].Invoke(null, new object[] { packet });
             }
         }
 
@@ -517,36 +542,7 @@ namespace EXO.WebClient
             Client
         }
 
-        private static List<MethodInfo> GetStaticMethodsWithAttribute<TAttribute>() where TAttribute : Attribute
-        {
-            List<MethodInfo> methodsWithAttribute = new List<MethodInfo>();
 
-            // Get all assemblies that are loaded in the current AppDomain
-            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
-
-            foreach (var assembly in assemblies)
-            {
-                // Get all types in the assembly
-                var types = assembly.GetTypes();
-
-                foreach (var type in types)
-                {
-                    // Get all static methods of the type
-                    var methods = type.GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-
-                    foreach (var method in methods)
-                    {
-                        // Check if the method has the specified attribute
-                        if (method.GetCustomAttributes(typeof(TAttribute), false).Any())
-                        {
-                            methodsWithAttribute.Add(method);
-                        }
-                    }
-                }
-            }
-
-            return methodsWithAttribute;
-        }
 
         private void Update()
         {
