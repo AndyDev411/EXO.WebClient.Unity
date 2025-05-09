@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -9,6 +10,11 @@ namespace EXO.WebClient
 {
     public class ExoNetworkManager : MonoBehaviour
     {
+
+        /// <summary>
+        /// The number of ticks per second...
+        /// </summary>
+        public float ticksPerSecond = 30;
 
         /// <summary>
         /// Tells wether or not we are host or not.
@@ -58,6 +64,18 @@ namespace EXO.WebClient
             ExoNetworkManager.Instance.ServerBroadcast(packet, except);
         }
 
+        #region Events
+
+        /// <summary>
+        /// Event that is called when we initialize the NetworkManager.
+        /// </summary>
+        public static event Action OnNetworkManagerInitEvent;
+
+        /// <summary>
+        /// Event used execute tick actions.
+        /// </summary>
+        public static event Action<float> OnClientTickEvent;
+
         /// <summary>
         /// Event that is called when the Host has connected to the server and was successful.
         /// </summary>
@@ -81,7 +99,9 @@ namespace EXO.WebClient
         /// <summary>
         /// Event that is called when we get dissconnected.
         /// </summary>
-        public event Action OnDissconnectedEvent;
+        public event Action OnDisconnectedEvent;
+
+        #endregion
 
         /// <summary>
         /// Client WebSocket we will use to communicate to the server.
@@ -169,7 +189,9 @@ namespace EXO.WebClient
 
         private void OnConnectionDisconnectedHandler()
         {
-            OnDissconnectedEvent?.Invoke();
+            // Stop the ticks...
+            StopAllCoroutines();
+            OnDisconnectedEvent?.Invoke();
         }
 
         private void OnConnectionStartHandler()
@@ -265,7 +287,8 @@ namespace EXO.WebClient
             try
             {
                 connection.Connect();
-
+                // Start Connection
+                StartCoroutine(HandleServerTick());
                 return true;
             }
             catch (Exception ex)
@@ -365,6 +388,24 @@ namespace EXO.WebClient
             }
         }
 
+        private void Handle_CustomPacket(Packet packet)
+        {
+            var handlerID = packet.ReadInt();
+            // This is only for customers...
+            if (IsHost)
+            {
+                long from = packet.ReadLong();
+                // [Header][HandlerID][ClientID]
+                var handler = hostHandlers[handlerID];
+                handler.Invoke(null, new object[] { packet, from });
+            }
+            else
+            {
+
+                clientHandlers[handlerID].Invoke(null, new object[] { packet });
+            }
+        }
+
         private void OnMessageHandler(byte[] bytes)
         {
 
@@ -374,46 +415,46 @@ namespace EXO.WebClient
             {
                 var header = (PacketType)packet.Header;
 
-                Debug.Log($"Header Type: {header}");
-                Debug.Log($"$Packet Size: {packet.Length}");
-
-                // Check if it is a custom header...
-                if (header == PacketType.Custom)
+                switch (header)
                 {
-
-                    var handlerID = packet.ReadInt();
-                    // This is only for customers...
-                    if (IsHost)
-                    {
-                        long from = packet.ReadLong();
-                        // [Header][HandlerID][ClientID]
-                        var handler = hostHandlers[handlerID];
-                        handler.Invoke(null, new object[] { packet, from });
-                    }
-                    else
-                    {
-
-                        clientHandlers[handlerID].Invoke(null, new object[] { packet });
-                    }
+                    case PacketType.Custom:
+                        Handle_CustomPacket(packet);
+                        break;
+                    case PacketType.ResponseHostRoom:
+                        Handle_ResponseHostRoom(packet);
+                        break;
+                    case PacketType.ResponseJoinRoom:
+                        Handle_ResponseJoinedRoom(packet);
+                        break;
+                    case PacketType.ClientJoinedRoom:
+                        Handle_ClientJoinedRoom(packet);
+                        break;
+                    case PacketType.ClientLeftRoom:
+                        Handle_ClientLeftRoom(packet);
+                        break;
+                    case PacketType.ExoSystem:
+                        Handle_ExoSystem(packet);
+                        break;
                 }
-                else // This is a Known Header...
-                {
-                    switch (header)
-                    {
-                        case PacketType.ResponseHostRoom:
-                            Handle_ResponseHostRoom(packet);
-                            break;
-                        case PacketType.ResponseJoinRoom:
-                            Handle_ResponseJoinedRoom(packet);
-                            break;
-                        case PacketType.ClientJoinedRoom:
-                            Handle_ClientJoinedRoom(packet);
-                            break;
-                        case PacketType.ClientLeftRoom:
-                            Handle_ClientLeftRoom(packet);
-                            break;
-                    }
-                }
+                
+            }
+        }
+
+        private void Handle_ExoSystem(Packet packet)
+        {
+            var handlerID = packet.ReadInt();
+            // This is only for customers...
+            if (IsHost)
+            {
+                long from = packet.ReadLong();
+                // [Header][HandlerID][ClientID]
+                var handler = hostHandlers[handlerID];
+                handler.Invoke(null, new object[] { packet, from });
+            }
+            else
+            {
+
+                clientHandlers[handlerID].Invoke(null, new object[] { packet });
             }
         }
 
@@ -512,6 +553,22 @@ namespace EXO.WebClient
             if (connection != null)
             {
                 connection.OnUpdate();
+            }
+        }
+
+        private IEnumerator HandleServerTick()
+        {
+            // Calculate the tick rate...
+            float tickRate = 1 / ticksPerSecond;
+
+            // Run the OnServerTickEvent!
+            while (true)
+            {
+                if (connection != null)
+                {
+                    OnClientTickEvent?.Invoke(tickRate);
+                }
+                yield return new WaitForSeconds(tickRate);
             }
         }
 

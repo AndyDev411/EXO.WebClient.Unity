@@ -12,5 +12,7 @@
 
         ClientLeftRoom = 0x05,
         ClientJoinedRoom = 0x06,
+
+        ExoSystem = 0x07
     }
 }
