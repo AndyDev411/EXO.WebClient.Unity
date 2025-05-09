@@ -1,13 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net.WebSockets;
 using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
 using EXO.Networking.Common;
-
-using Unity;
 using UnityEngine;
 
 namespace EXO.WebClient
@@ -28,12 +23,17 @@ namespace EXO.WebClient
         /// <summary>
         /// Starting example room.
         /// </summary>
-        public string startRoomName = "Example Room Name";
+        public string startRoomName;
 
         /// <summary>
         /// The Starting Room Key...
         /// </summary>
-        public string startingRoomKey = "123";
+        public string startingRoomKey;
+
+        /// <summary>
+        /// Name that will be used for connecting to the server.
+        /// </summary>
+        public string clientName;
 
         /// <summary>
         /// Static method used for sending things to the relay Server. Can be used by either a Client or a Host.
@@ -71,12 +71,17 @@ namespace EXO.WebClient
         /// <summary>
         /// Event that is called when a Client has joined.
         /// </summary>
-        public event EventHandler<ClientInfo> OnClientJoin;
+        public event EventHandler<ExoClient> OnClientJoin;
 
         /// <summary>
         /// Event that is called when a Client has left.
         /// </summary>
-        public event EventHandler<ClientInfo> OnClientLeft;
+        public event EventHandler<ExoClient> OnClientLeft;
+
+        /// <summary>
+        /// Event that is called when we get dissconnected.
+        /// </summary>
+        public event Action OnDissconnectedEvent;
 
         /// <summary>
         /// Client WebSocket we will use to communicate to the server.
@@ -96,7 +101,7 @@ namespace EXO.WebClient
         /// <summary>
         /// Singleton Instance.
         /// </summary>
-        public static ExoNetworkManager? Instance { get; set; }
+        public static ExoNetworkManager Instance { get; set; }
 
         /// <summary>
         /// True if we are the host and false if we are not.
@@ -118,13 +123,18 @@ namespace EXO.WebClient
         /// </summary>
         public string RoomName { get; private set; }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        private string roomName;
+
         private Dictionary<int, MethodInfo> clientHandlers = new();
         private Dictionary<int, MethodInfo> hostHandlers = new();
 
         /// <summary>
         /// Clients that are connected to the server.
         /// </summary>
-        private Dictionary<long, ClientInfo> Clients { get; } = new();
+        private Dictionary<long, ExoClient> Clients { get; } = new();
 
         public void Start()
         {
@@ -134,6 +144,7 @@ namespace EXO.WebClient
             this.connection = this.connectionFactory.CreateConnection();
             this.connection.OnRecieveEvent += OnMessageHandler;
             this.connection.OnConnectionStartEvent += OnConnectionStartHandler;
+            this.connection.OnDisconnectedEvent += OnConnectionDisconnectedHandler;
 
             if (Instance == null)
             {
@@ -146,14 +157,19 @@ namespace EXO.WebClient
             {
                 if (startAsHost)
                 {
-                    StartHost(startRoomName);
+                    StartHost(startRoomName, clientName);
                 }
                 else
                 {
-                    StartClient(startingRoomKey);
+                    StartClient(startingRoomKey, clientName);
                 }
             }
 
+        }
+
+        private void OnConnectionDisconnectedHandler()
+        {
+            OnDissconnectedEvent?.Invoke();
         }
 
         private void OnConnectionStartHandler()
@@ -164,6 +180,7 @@ namespace EXO.WebClient
                 {
                     using (var packet = new Packet((byte)PacketType.RequestHostRoom))
                     {
+                        packet.Write(clientName);
                         packet.Write(roomName);
                         RoomName = roomName;
                         PSend(packet);
@@ -183,6 +200,7 @@ namespace EXO.WebClient
                 {
                     using (var packet = new Packet((byte)PacketType.RequestJoinRoom))
                     {
+                        packet.Write(clientName);
                         packet.Write(roomKey);
                         RoomKey = roomKey;
                         PSend(packet);
@@ -196,15 +214,16 @@ namespace EXO.WebClient
             }
         }
 
-        private string roomName;
+
 
         /// <summary>
         /// Starts the NetworkManager as a Host on the Remote Server.
         /// </summary>
         /// <param name="roomName"> The name of the room you would like to host. </param>
         /// <returns> True if it was successful and false if it was not. </returns>
-        public bool StartHost(string roomName)
+        public bool StartHost(string roomName, string username)
         {
+            this.clientName = username;
             this.roomName = roomName;
             IsHost = true;
             if (!Connect())
@@ -222,9 +241,9 @@ namespace EXO.WebClient
         /// </summary>
         /// <param name="roomKey"> The Room Key we would like to query for and join. </param>
         /// <returns> True if it sucessfully started as a client, and false if not. </returns>
-        public bool StartClient(string roomKey)
+        public bool StartClient(string roomKey, string username)
         {
-
+            this.clientName = username;
             this.roomKey = roomKey;
 
             if (!Connect())
@@ -289,7 +308,7 @@ namespace EXO.WebClient
         /// Sends a packet.
         /// </summary>
         /// <param name="packet"> The packet we want to use. </param>
-        private async void PSend(Packet packet)
+        private void PSend(Packet packet)
             => connection.Send(packet.RawData);
 
         public void SendPacket(Packet packet, long to = 0)
@@ -333,7 +352,7 @@ namespace EXO.WebClient
             if (IsClient)
             { throw new Exception("Cannot Use ServerBroadcast as a client..."); }
 
-            var clientIDs = Clients.Values.Select(c => c.clientID);
+            var clientIDs = Clients.Values.Select(c => c.ID);
             foreach (var clientID in clientIDs)
             {
 
@@ -348,9 +367,15 @@ namespace EXO.WebClient
 
         private void OnMessageHandler(byte[] bytes)
         {
+
+            Debug.Log("Handling Message!");
+
             using (var packet = new Packet(bytes))
             {
                 var header = (PacketType)packet.Header;
+
+                Debug.Log($"Header Type: {header}");
+                Debug.Log($"$Packet Size: {packet.Length}");
 
                 // Check if it is a custom header...
                 if (header == PacketType.Custom)
@@ -407,7 +432,23 @@ namespace EXO.WebClient
             //[HEADER][ROOM NAME]
             LocalID = packet.ReadLong();
             RoomName = packet.ReadString();
+
+            // Read all the clients in...
+            ReadClients(packet);
+
+
             OnClientStart?.Invoke(this, this);
+        }
+
+        private void ReadClients(Packet packet)
+        {
+            int count = packet.ReadInt();
+
+            for (int i = 0; i < count; i++)
+            {
+                Handle_ClientJoinedRoom(packet);
+            }
+
         }
 
         private void Handle_ClientLeftRoom(Packet packet)
@@ -422,10 +463,9 @@ namespace EXO.WebClient
         private void Handle_ClientJoinedRoom(Packet packet)
         {
             // [HEADER][ClientID]
-            var id = packet.ReadLong();
-            var rec = new ClientInfo(id, "");
-            Clients.Add(id, rec);
-            OnClientJoin?.Invoke(this, rec);
+            var client = packet.ReadClient();
+            Clients.Add(client.ID, client);
+            OnClientJoin?.Invoke(this, client);
         }
 
         #endregion
@@ -473,20 +513,8 @@ namespace EXO.WebClient
             {
                 connection.OnUpdate();
             }
-
         }
 
-        public class ClientInfo
-        {
 
-            public ClientInfo(long clientID, string name)
-            {
-                this.clientID = clientID;
-                this.name = name;
-            }
-
-            public long clientID; 
-            public string name;
-        } 
     }
 }

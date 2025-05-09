@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Threading.Tasks;
 
 namespace EXO.Networking.Common
 {
@@ -8,6 +7,7 @@ namespace EXO.Networking.Common
 
         public event Action<byte[]> OnRecieveEvent;
         public event Action OnConnectionStartEvent;
+        public event Action OnDisconnectedEvent;
 
         public void Send(byte[] toSend);
 

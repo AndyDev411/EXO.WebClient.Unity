@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Text;
+using UnityEngine;
 
 namespace EXO.Networking.Common
 {
@@ -76,28 +77,33 @@ namespace EXO.Networking.Common
         #region Read
 
         public float ReadFloat()
-        { 
+        {
+            Debug.Log($"Attempting to Read Float...");
             return mReader.ReadSingle();
         }
 
         public string ReadString()
         {
+            Debug.Log($"Attempting to Read String...");
             var length = mReader.ReadInt32();
             return Encoding.UTF8.GetString(mReader.ReadBytes(length));
         }
 
         public int ReadInt()
-        { 
+        {
+            Debug.Log($"Attempting to Read Int...");
             return mReader.ReadInt32();
         }
 
         public long ReadLong()
         {
+            Debug.Log($"Attempting to Read Long...");
             return mReader.ReadInt64();
         }
 
         public Packet ReadPacket()
         {
+            Debug.Log($"Attempting to Read Inner Packet...");
             var legnth = mReader.ReadInt64();
             var bytes = mReader.ReadBytes((int)legnth);
             return new Packet(bytes);
@@ -112,12 +118,14 @@ namespace EXO.Networking.Common
         public long Length => mStream.Length;
 
         public void Reset()
-        { 
+        {
+            Debug.Log($"Attempting to Reset Packet...");
             mStream.Position = PACKET_HEADER_LENGTH;
         }
 
         public byte[] ReadBytes(int start, int count)
         {
+            Debug.Log($"Attempting to Read Bytes...");
             byte[] buffer = new byte[count];
             mStream.Read(buffer, PACKET_HEADER_LENGTH, count);
             return buffer;
@@ -125,6 +133,7 @@ namespace EXO.Networking.Common
 
         public byte[] ReadRest()
         {
+            Debug.Log($"Attempting to Read the Rest of the packet...");
             int count = (int)(mStream.Length - mStream.Position);
             byte[] buffer = new byte[count];
             mStream.Read(buffer, 0, count);
