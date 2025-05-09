@@ -1,4 +1,5 @@
 using EXO.WebClient;
+using System;
 using UnityEngine;
 
 public class ExoNetworkedMonoBehavior : MonoBehaviour
@@ -18,7 +19,7 @@ public class ExoNetworkedMonoBehavior : MonoBehaviour
     }
 
     protected virtual GameObject NetworkInstantiate(GameObject toSpawn, Vector3 location, Quaternion rotation)
-    { 
-        
+    {
+        throw new NotImplementedException();
     }
 }

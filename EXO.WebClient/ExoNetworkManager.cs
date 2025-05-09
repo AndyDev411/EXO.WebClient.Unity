@@ -435,8 +435,6 @@ namespace EXO.WebClient
         private void OnMessageHandler(byte[] bytes)
         {
 
-            Debug.Log("Handling Message!");
-
             using (var packet = new Packet(bytes))
             {
                 var header = (PacketType)packet.Header;
